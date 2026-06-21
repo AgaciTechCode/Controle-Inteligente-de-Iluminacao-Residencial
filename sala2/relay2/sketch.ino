@@ -58,7 +58,7 @@ void processarEstrategiaAtuacao() {
     novo_estado_rele = z2_comando_manual;
   }
   else if (z2_modo_operacao == "ECONOMICO") {
-    if (z2_movimento == 1 && z2_luminosidade <= 30) {
+    if (z2_movimento == 1 && z2_luminosidade <= 15) {
       novo_estado_rele = 1;
     }
   }
