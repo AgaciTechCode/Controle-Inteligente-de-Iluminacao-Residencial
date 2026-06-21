@@ -56,7 +56,7 @@ void processarEstrategiaAtuacao() {
     }
   } 
   else if (modo_operacao == "ECONOMICO") {
-    if (ultimo_movimento == 1 && ultima_luminosidade <= 15) {
+    if (ultimo_movimento == 1 && ultima_luminosidade <= 30) {
       novo_estado_rele = 1;
     }
   }
