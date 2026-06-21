@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Plataforma IoT Modular e Escalável</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --accent: #2980b9; --success: #27ae60; --danger: #c0392b; --bg: #f4f6f9; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); margin: 0; padding: 0; color: #333; }
+        
+        /* Topbar e Navegação por Abas */
+        .topbar { background: var(--primary); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .topbar h1 { margin: 0; font-size: 20px; }
+        .mqtt-badge { color: #f1c40f; font-weight: bold; transition: 0.3s; }
+        .nav-tabs { display: flex; background: #34495e; padding: 0 10px; }
+        .tab-btn { background: none; border: none; color: #bdc3c7; padding: 15px 20px; font-size: 16px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .tab-btn:hover { color: white; background: rgba(255,255,255,0.05); }
+        .tab-btn.active { color: white; background: var(--accent); border-bottom: 3px solid white; }
+        
+        /* Conteúdo das Abas */
+        .tab-content { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+        
+        /* Seletor Dinâmico de Ambientes */
+        .env-selector { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 10px; }
+        select { padding: 8px 12px; border-radius: 5px; font-size: 16px; border: 1px solid #ccc; background: white; min-width: 200px; }
+        
+        /* Grid de Controle */
+        .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; position: relative; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); }
+        .status-val { font-size: 28px; font-weight: bold; margin: 15px 0; }
+        .ON { color: #2ecc71; } .OFF { color: #e74c3c; }
+        
+        /* Sub-sensores Expandidos */
+        .dropdown-detalhes { display: none; text-align: left; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; font-size: 14px; line-height: 1.8; color: #555; }
+        .badge-click { font-size: 11px; color: var(--accent); font-weight: normal; display: block; margin-top: -5px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Painel Atuador */
+        .actuator-zone { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; margin-top: 20px; }
+        .btn-group { display: flex; justify-content: center; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; transition: 0.2s; background: #95a5a6; color: white; }
+        button.btn-blue { background: var(--accent); } button.btn-blue.active { background: #1a5276; box-shadow: inset 0 3px 5px rgba(0,0,0,0.3); }
+        button.btn-green { background: var(--success); } button.btn-red { background: var(--danger); }
+        button:hover { opacity: 0.9; }
+        
+        /* Painel de Exportação Avançado */
+        .export-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
+        
+        /* Painel de Estatísticas e Layout de Gráficos */
+        .analytics-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        @media (min-width: 900px) { .analytics-grid { grid-template-columns: 1fr 1fr; } .full-width { grid-column: span 2; } }
+        
+        .chart-box { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); height: 350px; box-sizing: border-box; }
+        .chart-box h3 { margin-top: 0; margin-bottom: 10px; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 8px; font-size: 16px; }
+        .chart-container-wrapper { position: relative; height: calc(100% - 40px); width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div class="topbar">
+        <h1>Plataforma de Monitoramento IoT</h1>
+        <div id="mqtt-status" class="mqtt-badge">Sincronizando rede...</div>
+    </div>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="alternarAba('aba-controle')">Painel de Controle</button>
+        <button class="tab-btn" onclick="alternarAba('aba-estatisticas')">Análise e Estatísticas</button>
+    </div>
+
+    <div class="tab-content active" style="padding-bottom: 0;">
+        <div class="env-selector">
+            <label for="global-env-select" style="font-weight: bold;">Ambiente em Foco:</label>
+            <select id="global-env-select" onchange="sincronizarSelecaoAmbiente(this.value)">
+                <option value="">Aguardando detecção de redes...</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="aba-controle" class="tab-content active">
+        <div class="grid-cards">
+            <div class="card">
+                <h3>Estado do Atuador (Lâmpada)</h3>
+                <div id="ctrl-lamp" class="status-val OFF">---</div>
+                <span class="badge-click" style="color:#7f8c8d;">Status de Saída</span>
+            </div>
+            
+            <div class="card" onclick="toggleDetalhes('detalhes-pir')" style="cursor: pointer;">
+                <h3>Sensor de Presença (PIR)</h3>
+                <div id="ctrl-pir" class="status-val">---</div>
+                <span class="badge-click">Clique para detalhar canais</span>
+                <div id="detalhes-pir" class="dropdown-detalhes"></div>
+            </div>
+            
+            <div class="card" onclick="toggleDetalhes('detalhes-ldr')" style="cursor: pointer;">
+                <h3>Sensor de Luminosidade (LDR)</h3>
+                <div id="ctrl-ldr" class="status-val">---</div>
+                <span class="badge-click">Clique para detalhar canais</span>
+                <div id="detalhes-ldr" class="dropdown-detalhes"></div>
+            </div>
+        </div>
+
+        <div class="actuator-zone">
+            <h3>Estratégia de Controle da Iluminação</h3>
+            <div id="txt-modo-atual" style="font-weight: bold; color: var(--accent); margin-bottom: 10px;">Modo: ---</div>
+            <div class="btn-group">
+                <button id="btn-auto" class="btn-blue" onclick="publicarModo('AUTOMATICO')">Automático</button>
+                <button id="btn-econ" class="btn-blue" onclick="publicarModo('ECONOMICO')">Econômico</button>
+                <button id="btn-manual" class="btn-blue" onclick="publicarModo('MANUAL')">Manual</button>
+            </div>
+            <div id="sub-painel-manual" style="margin-top: 20px; display: none; border-top: 1px dashed #ccc; padding-top: 15px;">
+                <h4>Comandos Manuais Diretos</h4>
+                <div class="btn-group">
+                    <button class="btn-green" onclick="publicarComandoManual('1')">Ligar Dispositivo</button>
+                    <button class="btn-red" onclick="publicarComandoManual('0')">Desligar Dispositivo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="aba-estatisticas" class="tab-content">
+        <div class="export-panel">
+            <div>
+                <label for="select-chart-export" style="font-weight: bold; margin-right: 5px;">Dado p/ Exportar:</label>
+                <select id="select-chart-export" style="min-width: 180px;">
+                    <option value="todos">Todos os Dados (Histórico)</option>
+                    <option value="geral">Gráfico Correlacionado</option>
+                    <option value="ldr">Apenas Luminosidade (LDR)</option>
+                    <option value="pir">Apenas Presença (PIR)</option>
+                    <option value="lamp">Apenas Estado da Lâmpada</option>
+                    <option value="modo">Apenas Histórico de Modos</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-weight: bold; margin-right: 5px;">Formato:</label>
+                <button class="btn-blue active" id="fmt-png" onclick="setFormatoExportacao('PNG')" style="padding: 7px 15px;">Imagem (PNG)</button>
+                <button class="btn-blue" id="fmt-csv" onclick="setFormatoExportacao('CSV')" style="padding: 7px 15px; background: #7f8c8d;">Dados (CSV)</button>
+            </div>
+            <button class="btn-green" onclick="processarExportacao()" style="margin-left: auto;">Executar Download</button>
+            <button class="btn-red" onclick="limparBancoLocal()">Resetar Histórico Local</button>
+        </div>
+        
+        <div class="analytics-grid">
+            <div class="chart-box full-width">
+                <h3>Gráfico Geral Correlacionado (Sensores x Atuadores Consolidados)</h3>
+                <div class="chart-container-wrapper">
+                    <canvas id="chart-geral"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Acompanhamento Individual: Luminosidade (Canais Separados)</h3>
+                <div class="chart-container-wrapper">
+                    <canvas id="chart-ind-ldr"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Acompanhamento Individual: Presença (Canais Separados)</h3>
+                <div class="chart-container-wrapper">
+                    <canvas id="chart-ind-pir"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Histórico de Ativação do Atuador (Lâmpada Acesa/Apagada)</h3>
+                <div class="chart-container-wrapper">
+                    <canvas id="chart-ind-lamp"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Histórico de Modos de Operação (0=MAN, 1=AUTO, 2=ECON)</h3>
+                <div class="chart-container-wrapper">
+                    <canvas id="chart-ind-modo"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MQTT_HOST = "9c2c5a2ff2444b98b9f7fff2e9aa1180.s1.eu.hivemq.cloud";
+        const MQTT_PORT = 8884; 
+        const MQTT_USER = "pir_user"; 
+        const MQTT_PASS = "Agaci123";
+
+        let ambienteAtivo = "";
+        let ambientesDescobertos = new Set(); 
+        let formatoSelecionado = "PNG";
+        
+        const clientId = "Web_Modular_Engine_" + Math.random().toString(16).substr(2, 8);
+        const client = new Paho.MQTT.Client(MQTT_HOST, Number(MQTT_PORT), clientId);
+
+        let dbHistorico = JSON.parse(localStorage.getItem("db_iot_modular")) || [];
+        
+        let cacheSensores = {}; 
+        let cacheAtuadores = {}; 
+
+        client.onConnectionLost = onConnectionLost;
+        client.onMessageArrived = onMessageArrived;
+
+        const options = { useSSL: true, userName: MQTT_USER, password: MQTT_PASS, onSuccess: onConnect, onFailure: () => { document.getElementById("mqtt-status").innerText = "Erro na rede."; } };
+        client.connect(options);
+
+        function onConnect() {
+            document.getElementById("mqtt-status").innerText = "Rede Sincronizada!";
+            document.getElementById("mqtt-status").style.color = "#2ecc71";
+            
+            client.subscribe("/sensores/presenca/+/+");        
+            client.subscribe("/sensores/luminosidade/+/+");   
+            client.subscribe("/servicos/atuador/+/estado");    
+            client.subscribe("/servicos/atuador/+/modo");      
+
+            inicializarEstruturaGraficos();
+        }
+
+        function gerarCorAleatoria() {
+            const r = Math.floor(Math.random() * 200);
+            const g = Math.floor(Math.random() * 200);
+            const b = Math.floor(Math.random() * 200);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function toggleDetalhes(idElemento) {
+            const elemento = document.getElementById(idElemento);
+            elemento.style.display = (elemento.style.display === "none" || elemento.style.display === "") ? "block" : "none";
+        }
+
+        function alternarAba(abaId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(abaId).classList.add('active');
+            document.querySelector(`[onclick="alternarAba('${abaId}')"]`).classList.add('active');
+            document.querySelectorAll('.tab-content')[0].classList.add('active'); 
+            
+            if (abaId === 'aba-estatisticas') { 
+                setTimeout(() => {
+                    if (meuChartGeral) {
+                        meuChartGeral.resize();
+                        meuChartLdr.resize();
+                        meuChartPir.resize();
+                        meuChartLamp.resize();
+                        meuChartModo.resize();
+                        atualizarTodosOsGraficos();
+                    }
+                }, 50); 
+            }
+        }
+
+        function onMessageArrived(message) {
+            const topico = message.destinationName;
+            const payload = message.payloadString;
+            const partes = topico.split('/');
+            
+            let subTipo = partes[2];      
+            let ambienteDetectado = partes[3];
+            let idDispositivo = partes[4]; 
+
+            if (!ambienteDetectado) return;
+
+            if (!cacheSensores[ambienteDetectado]) cacheSensores[ambienteDetectado] = {};
+            if (!cacheAtuadores[ambienteDetectado]) {
+                cacheAtuadores[ambienteDetectado] = { lamp: 0, modoNum: 1, modoStr: "AUTOMATICO" };
+            }
+
+            if (!ambientesDescobertos.has(ambienteDetectado)) {
+                ambientesDescobertos.add(ambienteDetectado);
+                atualizarSeletorInterface(ambienteDetectado);
+            }
+
+            processarDadosAmbiente(ambienteDetectado, topico, payload, subTipo, idDispositivo);
+        }
+
+        function atualizarSeletorInterface(novoAmbiente) {
+            const select = document.getElementById("global-env-select");
+            if (ambientesDescobertos.size === 1) select.innerHTML = "";
+
+            const opt = document.createElement("option");
+            opt.value = novoAmbiente;
+            opt.innerText = novoAmbiente.toUpperCase().replace("_", " ");
+            select.appendChild(opt);
+
+            if (!ambienteAtivo) {
+                sincronizarSelecaoAmbiente(novoAmbiente);
+            }
+        }
+
+        function sincronizarSelecaoAmbiente(val) {
+            ambienteAtivo = val;
+            document.getElementById("global-env-select").value = val;
+            
+            if(cacheSensores[val]) {
+                // --- ATUALIZAÇÃO DO DETALHE E CONSOLIDADO DE PRESENÇA ---
+                let pirs = Object.keys(cacheSensores[val]).filter(k => k.startsWith("pir"));
+                let algumPir = pirs.some(k => cacheSensores[val][k] === 1) ? 1 : 0;
+                document.getElementById("ctrl-pir").innerText = algumPir ? "DETECTADO" : "Nenhum";
+                document.getElementById("ctrl-pir").className = algumPir ? "status-val ON" : "status-val OFF";
+                
+                let htmlPir = "";
+                pirs.sort().forEach(id => {
+                    let estado = cacheSensores[val][id] === 1 ? "<span style='color: #2ecc71; font-weight:bold;'>ATIVO</span>" : "<span style='color: #7f8c8d;'>Inativo</span>";
+                    htmlPir += `<div><strong>${id.toUpperCase()}:</strong> ${estado}</div>`;
+                });
+                document.getElementById("detalhes-pir").innerHTML = htmlPir || "<div>Nenhum sensor.</div>";
+
+                // --- ATUALIZAÇÃO DO DETALHE E CONSOLIDADO DE LUMINOSIDADE ---
+                let ldrs = Object.keys(cacheSensores[val]).filter(k => k.startsWith("ldr"));
+                let soma = ldrs.reduce((acc, k) => acc + cacheSensores[val][k], 0);
+                let med = ldrs.length > 0 ? Math.round(soma / ldrs.length) : 0;
+                document.getElementById("ctrl-ldr").innerText = med + "%";
+                
+                let htmlLdr = "";
+                ldrs.sort().forEach(id => {
+                    htmlLdr += `<div><strong>${id.toUpperCase()}:</strong> ${cacheSensores[val][id]}%</div>`;
+                });
+                document.getElementById("detalhes-ldr").innerHTML = htmlLdr || "<div>Nenhum sensor.</div>";
+                
+            } else {
+                document.getElementById("ctrl-pir").innerText = "---";
+                document.getElementById("detalhes-pir").innerHTML = "";
+                document.getElementById("ctrl-ldr").innerText = "---";
+                document.getElementById("detalhes-ldr").innerHTML = "";
+            }
+            
+            if(cacheAtuadores[val]) {
+                let statusLamp = cacheAtuadores[val].lamp;
+                document.getElementById("ctrl-lamp").innerText = (statusLamp === 1) ? "LIGADA" : "DESLIGADA";
+                document.getElementById("ctrl-lamp").className = (statusLamp === 1) ? "status-val ON" : "status-val OFF";
+                
+                atualizarLayoutModosAtuador(cacheAtuadores[val].modoStr);
+            } else {
+                document.getElementById("ctrl-lamp").innerText = "---";
+                document.getElementById("txt-modo-atual").innerText = "Modo: ---";
+            }
+            
+            if (meuChartGeral) atualizarTodosOsGraficos();
+        }
+
+        function processarDadosAmbiente(ambiente, topico, payload, subTipo, idDispositivo) {
+            let houveMudancaDados = false;
+            let valorNum = parseInt(payload);
+
+            if (subTipo === "presenca") {
+                cacheSensores[ambiente][idDispositivo] = valorNum;
+                houveMudancaDados = true;
+            }
+            
+            else if (subTipo === "luminosidade") {
+                cacheSensores[ambiente][idDispositivo] = valorNum;
+                houveMudancaDados = true;
+            }
+            
+            else if (idDispositivo === "estado") {
+                cacheAtuadores[ambiente].lamp = valorNum;
+                houveMudancaDados = true;
+            }
+            
+            else if (idDispositivo === "modo") {
+                cacheAtuadores[ambiente].modoStr = payload;
+                if (payload === "MANUAL") cacheAtuadores[ambiente].modoNum = 0;
+                else if (payload === "AUTOMATICO") cacheAtuadores[ambiente].modoNum = 1;
+                else if (payload === "ECONOMICO") cacheAtuadores[ambiente].modoNum = 2;
+                houveMudancaDados = true;
+            }
+
+            if (houveMudancaDados) {
+                const agora = new Date();
+                const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                let ldrs = Object.keys(cacheSensores[ambiente]).filter(key => key.startsWith("ldr"));
+                let somaLdr = ldrs.reduce((acc, key) => acc + cacheSensores[ambiente][key], 0);
+                let valorLdrConsolidado = ldrs.length > 0 ? Math.round(somaLdr / ldrs.length) : 0;
+
+                let valorPirConsolidado = Object.keys(cacheSensores[ambiente]).filter(key => key.startsWith("pir")).some(key => cacheSensores[ambiente][key] === 1) ? 1 : 0;
+
+                dbHistorico.push({
+                    sala: ambiente,
+                    hora: horaStr,
+                    ldr: valorLdrConsolidado,
+                    pir: valorPirConsolidado,
+                    lamp: cacheAtuadores[ambiente].lamp,
+                    modo: cacheAtuadores[ambiente].modoNum,
+                    leiturasIndividuais: { ...cacheSensores[ambiente] } 
+                });
+
+                if (dbHistorico.length > 300) dbHistorico.shift(); 
+                localStorage.setItem("db_iot_modular", JSON.stringify(dbHistorico));
+                
+                // Força sincronismo visual e estatístico em tempo real se a sala ativa receber dados
+                if (ambiente === ambienteAtivo) {
+                    sincronizarSelecaoAmbiente(ambienteAtivo);
+                }
+            }
+        }
+
+        function atualizarLayoutModosAtuador(modo) {
+            document.getElementById("txt-modo-atual").innerText = "Modo Atual: " + modo;
+            document.getElementById("btn-auto").classList.remove("active");
+            document.getElementById("btn-econ").classList.remove("active");
+            document.getElementById("btn-manual").classList.remove("active");
+            document.getElementById("sub-painel-manual").style.display = "none";
+
+            if (modo === "AUTOMATICO") document.getElementById("btn-auto").classList.add("active");
+            if (modo === "ECONOMICO") document.getElementById("btn-econ").classList.add("active");
+            if (modo === "MANUAL") {
+                document.getElementById("btn-manual").classList.add("active");
+                document.getElementById("sub-painel-manual").style.display = "block";
+            }
+        }
+
+        function publicarModo(modo) {
+            if (!ambienteAtivo) return;
+            const msg = new Paho.MQTT.Message(modo);
+            msg.destinationName = `/servicos/atuador/${ambienteAtivo}/modo`;
+            msg.retained = true; msg.qos = 2;
+            client.send(msg);
+        }
+
+        function publicarComandoManual(estado) {
+            if (!ambienteAtivo) return;
+            const msg = new Paho.MQTT.Message(estado);
+            msg.destinationName = `/servicos/atuador/${ambienteAtivo}/comando`;
+            msg.qos = 2;
+            client.send(msg);
+        }
+
+        let meuChartGeral, meuChartLdr, meuChartPir, meuChartLamp, meuChartModo;
+
+        function inicializarEstruturaGraficos() {
+            const optGeral = { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, title: { display: true, text: 'LDR (%)' } }, y_p: { position: 'right', min: 0, max: 2.2, ticks: { stepSize: 1 }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Estados Digitais e Modos' } } } };
+            const optInd = { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } };
+            const optDigital = { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 1.2, ticks: { stepSize: 1 } } } };
+            
+            const optModos = { 
+                responsive: true, maintainAspectRatio: false, 
+                scales: { y: { min: 0, max: 2, ticks: { stepSize: 1, callback: function(v) { if(v===0) return 'MANUAL'; if(v===1) return 'AUTO'; if(v===2) return 'ECON'; return ''; } } } } 
+            };
+
+            meuChartGeral = new Chart(document.getElementById('chart-geral').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { label: 'Luminosidade (Média)', data: [], borderColor: '#f1c40f', yAxisID: 'y' }, 
+                    { label: 'Presença (Unificada)', data: [], borderColor: '#2ecc71', yAxisID: 'y_p', stepped: true },
+                    { label: 'Lâmpada', data: [], borderColor: '#9b59b6', yAxisID: 'y_p', stepped: true, borderDash: [3, 3] },
+                    { label: 'Modo Sistema', data: [], borderColor: '#3498db', yAxisID: 'y_p', stepped: true, borderDash: [8, 4] }
+                ]},
+                options: optGeral
+            });
+
+            meuChartLdr = new Chart(document.getElementById('chart-ind-ldr').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [] },
+                options: optInd
+            });
+
+            meuChartPir = new Chart(document.getElementById('chart-ind-pir').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [] },
+                options: optDigital
+            });
+
+            meuChartLamp = new Chart(document.getElementById('chart-ind-lamp').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Estado da Lâmpada', data: [], borderColor: '#9b59b6', backgroundColor: 'rgba(155,89,182,0.1)', fill: true, stepped: true }] },
+                options: optDigital
+            });
+
+            meuChartModo = new Chart(document.getElementById('chart-ind-modo').getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Modo de Operação', data: [], borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', fill: true, stepped: true }] },
+                options: optModos
+            });
+        }
+
+        function atualizarTodosOsGraficos() {
+            const dadosFiltrados = dbHistorico.filter(d => d.sala === ambienteAtivo);
+            const tempos = dadosFiltrados.map(d => d.hora);
+
+            meuChartGeral.data.labels = tempos;
+            meuChartGeral.data.datasets[0].data = dadosFiltrados.map(d => d.ldr);
+            meuChartGeral.data.datasets[1].data = dadosFiltrados.map(d => d.pir);
+            meuChartGeral.data.datasets[2].data = dadosFiltrados.map(d => d.lamp || 0);
+            meuChartGeral.data.datasets[3].data = dadosFiltrados.map(d => d.modo || 0);
+            meuChartGeral.update();
+
+            meuChartLamp.data.labels = tempos;
+            meuChartLamp.data.datasets[0].data = dadosFiltrados.map(d => d.lamp || 0);
+            meuChartLamp.update();
+
+            meuChartModo.data.labels = tempos;
+            meuChartModo.data.datasets[0].data = dadosFiltrados.map(d => d.modo || 0);
+            meuChartModo.update();
+
+            let sensoresDisponiveis = cacheSensores[ambienteAtivo] ? Object.keys(cacheSensores[ambienteAtivo]) : [];
+
+            // --- PROCESSAMENTO ESCALÁVEL DO GRÁFICO INDIVIDUAL LDR (PICOS E VALES) ---
+            meuChartLdr.data.labels = tempos;
+            let listaLdrs = sensoresDisponiveis.filter(key => key.startsWith("ldr"));
+            meuChartLdr.data.datasets = meuChartLdr.data.datasets.filter(ds => listaLdrs.includes(ds.label));
+
+            listaLdrs.forEach(sensorId => {
+                let dataset = meuChartLdr.data.datasets.find(ds => ds.label === sensorId);
+                if (!dataset) {
+                    let cor = gerarCorAleatoria();
+                    dataset = { label: sensorId, data: [], borderColor: cor, backgroundColor: cor.replace('rgb', 'rgba').replace(')', ', 0.05)'), fill: true };
+                    meuChartLdr.data.datasets.push(dataset);
+                }
+                dataset.data = dadosFiltrados.map(d => (d.leiturasIndividuais && d.leiturasIndividuais[sensorId] !== undefined) ? d.leiturasIndividuais[sensorId] : d.ldr);
+            });
+            meuChartLdr.update();
+
+            // --- PROCESSAMENTO ESCALÁVEL DO GRÁFICO INDIVIDUAL PIR (LINHAS INDIVIDUAIS DE PRESENÇA) ---
+            meuChartPir.data.labels = tempos;
+            let listaPirs = sensoresDisponiveis.filter(key => key.startsWith("pir"));
+            meuChartPir.data.datasets = meuChartPir.data.datasets.filter(ds => listaPirs.includes(ds.label));
+
+            listaPirs.forEach(sensorId => {
+                let dataset = meuChartPir.data.datasets.find(ds => ds.label === sensorId);
+                if (!dataset) {
+                    let cor = gerarCorAleatoria();
+                    dataset = { label: sensorId, data: [], borderColor: cor, stepped: true };
+                    meuChartPir.data.datasets.push(dataset);
+                }
+                dataset.data = dadosFiltrados.map(d => (d.leiturasIndividuais && d.leiturasIndividuais[sensorId] !== undefined) ? d.leiturasIndividuais[sensorId] : d.pir);
+            });
+            meuChartPir.update();
+        }
+
+        function setFormatoExportacao(fmt) {
+            formatoSelecionado = fmt;
+            document.getElementById('fmt-png').style.background = (fmt === 'PNG') ? 'var(--accent)' : '#7f8c8d';
+            document.getElementById('fmt-csv').style.background = (fmt === 'CSV') ? 'var(--accent)' : '#7f8c8d';
+            
+            const seletor = document.getElementById('select-chart-export');
+            if (fmt === 'CSV') {
+                if(seletor.value !== 'todos') seletor.value = 'todos';
+                seletor.disabled = true;
+            } else {
+                seletor.disabled = false;
+            }
+        }
+
+        function processarExportacao() {
+            if (!ambienteAtivo) { alert("Nenhum ambiente ativo para exportação."); return; }
+            const alvo = document.getElementById('select-chart-export').value;
+
+            if (formatoSelecionado === "CSV") {
+                exportarBancoParaCSV();
+            } else {
+                let chartObjeto;
+                if (alvo === 'geral') chartObjeto = meuChartGeral;
+                else if (alvo === 'ldr') chartObjeto = meuChartLdr;
+                else if (alvo === 'pir') chartObjeto = meuChartPir;
+                else if (alvo === 'lamp') chartObjeto = meuChartLamp;
+                else if (alvo === 'modo') chartObjeto = meuChartModo;
+                else {
+                    alert("Para exportar em Imagem, escolha um gráfico específico no seletor.");
+                    return;
+                }
+                exportarGraficoImagemFundoBranco(chartObjeto, `Relatorio_${alvo.toUpperCase()}_${ambienteAtivo}`);
+            }
+        }
+
+        function exportarGraficoImagemFundoBranco(chartInstance, nomeArquivo) {
+            const canvasOriginal = chartInstance.canvas;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvasOriginal.width;
+            tempCanvas.height = canvasOriginal.height;
+            const ctx = tempCanvas.getContext('2d');
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            ctx.drawImage(canvasOriginal, 0, 0);
+
+            const link = document.createElement('a');
+            link.download = `${nomeArquivo}.png`;
+            link.href = tempCanvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function exportarBancoParaCSV() {
+            const dadosFiltrados = dbHistorico.filter(d => d.sala === ambienteAtivo);
+            if(dadosFiltrados.length === 0) { alert("Sem dados salvos nesta sala."); return; }
+
+            let csvContent = "data:text/csv;charset=utf-8,SALA,HORARIO,LUMINOSIDADE_LDR_MEDIO,PRESENCA_PIR_CONSOLIDADO,ESTADO_LAMPADA,MODO_OPERACAO_ID,MODO_OPERACAO_NOME\n";
+            
+            dadosFiltrados.forEach(d => {
+                let nomeModo = "MANUAL";
+                if(d.modo === 1) nomeModo = "AUTOMATICO";
+                if(d.modo === 2) nomeModo = "ECONOMICO";
+                
+                csvContent += `${d.sala.toUpperCase()},${d.hora},${d.ldr},${d.pir},${d.lamp || 0},${d.modo || 0},${nomeModo}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Historico_Completo_Sensores_${ambienteAtivo}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function limparBancoLocal() {
+            if (confirm("Resetar base analítica?")) { localStorage.removeItem("db_iot_modular"); dbHistorico = []; atualizarTodosOsGraficos(); }
+        }
+
+        function onConnectionLost(res) { if (res.errorCode !== 0) console.log(res.errorMessage); }
+    </script>
+</body>
+</html>

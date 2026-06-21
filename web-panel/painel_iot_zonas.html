@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Plataforma IoT Modular e Escalável</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --primary: #1a2332;
+            --primary-light: #243447;
+            --accent: #2980b9;
+            --accent-bright: #3d9fd4;
+            --success: #27ae60;
+            --danger: #c0392b;
+            --warning: #f39c12;
+            --bg: #f0f3f7;
+            --card-bg: #ffffff;
+            --text: #2c3e50;
+            --text-muted: #7f8c8d;
+            --border: #e8ecf0;
+            --zone-1: #2980b9;
+            --zone-2: #8e44ad;
+            --zone-3: #16a085;
+            --zone-4: #d35400;
+        }
+
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); }
+
+        /* ── Topbar ── */
+        .topbar {
+            background: var(--primary);
+            color: white;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .topbar-left { display: flex; align-items: center; gap: 14px; }
+        .topbar-icon { font-size: 22px; opacity: 0.8; }
+        .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; }
+        .topbar-sub { font-size: 12px; opacity: 0.55; margin-top: 2px; }
+        .mqtt-badge {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.08);
+            color: #f1c40f;
+            border: 1px solid rgba(241,196,15,0.3);
+            transition: 0.4s;
+        }
+        .mqtt-badge.online { color: #2ecc71; border-color: rgba(46,204,113,0.3); background: rgba(46,204,113,0.08); }
+
+        /* ── Tabs ── */
+        .nav-tabs { background: var(--primary-light); padding: 0 16px; display: flex; border-bottom: 2px solid rgba(255,255,255,0.06); }
+        .tab-btn {
+            background: none; border: none; color: rgba(255,255,255,0.45);
+            padding: 13px 20px; font-size: 14px; cursor: pointer; font-weight: 600;
+            transition: 0.2s; border-bottom: 3px solid transparent; margin-bottom: -2px;
+        }
+        .tab-btn:hover { color: rgba(255,255,255,0.75); }
+        .tab-btn.active { color: white; border-bottom-color: var(--accent-bright); }
+
+        /* ── Layout ── */
+        .tab-content { display: none; padding: 20px 24px; max-width: 1280px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+
+        /* ── Env Selector ── */
+        .env-bar {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+        .env-bar label { font-weight: 600; font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+        select {
+            padding: 8px 14px; border-radius: 6px; font-size: 14px;
+            border: 1px solid var(--border); background: var(--bg);
+            color: var(--text); min-width: 200px; font-weight: 500;
+            cursor: pointer;
+        }
+        select:focus { outline: none; border-color: var(--accent); }
+
+        /* ── Zone Grid ── */
+        .zones-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        /* ── Zone Card ── */
+        .zone-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .zone-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.1); }
+
+        .zone-header {
+            padding: 13px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+        }
+        .zone-title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+        .zone-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+        /* Estado do Relé — badge grande */
+        .rele-badge {
+            font-size: 11px; font-weight: 700; padding: 4px 10px;
+            border-radius: 20px; letter-spacing: 0.6px; text-transform: uppercase;
+            transition: 0.3s;
+        }
+        .rele-badge.on { background: rgba(39,174,96,0.12); color: #27ae60; border: 1px solid rgba(39,174,96,0.3); }
+        .rele-badge.off { background: rgba(127,140,141,0.1); color: var(--text-muted); border: 1px solid var(--border); }
+
+        /* Sensores dentro da zona */
+        .zone-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+        .sensor-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            background: var(--bg);
+            border-radius: 7px;
+            font-size: 13px;
+        }
+        .sensor-icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+        .sensor-label { color: var(--text-muted); flex: 1; font-size: 12px; }
+        .sensor-val { font-weight: 700; font-size: 14px; }
+        .sensor-val.active { color: var(--success); }
+        .sensor-val.inactive { color: var(--text-muted); }
+        .sensor-bar-wrap { flex: 1; }
+        .sensor-bar { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 3px; }
+        .sensor-bar-fill { height: 100%; border-radius: 3px; background: var(--warning); transition: width 0.5s; }
+
+        /* Modo da zona */
+        .zone-footer {
+            padding: 10px 16px 14px;
+            border-top: 1px solid var(--border);
+        }
+        .zone-mode-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .zone-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .zone-btn {
+            flex: 1; min-width: 60px;
+            padding: 7px 8px; border: 1px solid var(--border);
+            border-radius: 6px; font-size: 12px; font-weight: 600;
+            cursor: pointer; background: var(--bg); color: var(--text-muted);
+            transition: 0.15s; text-align: center;
+        }
+        .zone-btn:hover { background: var(--border); color: var(--text); }
+        .zone-btn.active-auto { background: rgba(41,128,185,0.12); color: var(--accent); border-color: rgba(41,128,185,0.35); }
+        .zone-btn.active-econ { background: rgba(39,174,96,0.12); color: var(--success); border-color: rgba(39,174,96,0.35); }
+        .zone-btn.active-manual { background: rgba(243,156,18,0.12); color: var(--warning); border-color: rgba(243,156,18,0.35); }
+
+        /* Manual sub-panel */
+        .manual-panel {
+            display: none;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border);
+            display: none;
+        }
+        .manual-panel .zone-btn-group { justify-content: center; }
+        .btn-on  { background: rgba(39,174,96,0.1)  !important; color: var(--success) !important; border-color: rgba(39,174,96,0.3) !important; }
+        .btn-off { background: rgba(192,57,43,0.1)  !important; color: var(--danger)  !important; border-color: rgba(192,57,43,0.3) !important; }
+        .btn-on:hover  { background: rgba(39,174,96,0.22)  !important; }
+        .btn-off:hover { background: rgba(192,57,43,0.22) !important; }
+
+        /* ── Modo Global ── */
+        .global-mode-bar {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+        .global-mode-bar h4 { margin: 0 0 12px; font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .global-mode-info { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.6; }
+        .global-mode-info b { color: var(--text); }
+        .global-btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        .global-btn {
+            padding: 9px 20px; border: 1px solid var(--border);
+            border-radius: 7px; font-size: 13px; font-weight: 600;
+            cursor: pointer; background: var(--bg); color: var(--text-muted);
+            transition: 0.15s;
+        }
+        .global-btn:hover { background: var(--border); }
+        .global-btn.g-auto   { background: rgba(41,128,185,0.1); color: var(--accent); border-color: rgba(41,128,185,0.3); }
+        .global-btn.g-econ   { background: rgba(39,174,96,0.1); color: var(--success); border-color: rgba(39,174,96,0.3); }
+        .global-btn.g-manual { background: rgba(243,156,18,0.1); color: var(--warning); border-color: rgba(243,156,18,0.3); }
+
+        /* ── Analytics ── */
+        .export-panel {
+            background: var(--card-bg); padding: 14px 18px; border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+            border: 1px solid var(--border);
+        }
+        .export-panel label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-right: 4px; }
+        .analytics-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 900px) { .analytics-grid { grid-template-columns: 1fr 1fr; } .full-width { grid-column: span 2; } }
+        .chart-box {
+            background: var(--card-bg); padding: 16px; border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06); height: 340px;
+            border: 1px solid var(--border);
+        }
+        .chart-box h3 { margin: 0 0 10px; color: var(--text); font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        .chart-container-wrapper { position: relative; height: calc(100% - 42px); width: 100%; }
+
+        button { cursor: pointer; }
+
+        /* Export buttons */
+        .exp-btn {
+            padding: 7px 16px; border-radius: 6px; font-size: 12px; font-weight: 700;
+            border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); transition: 0.15s;
+        }
+        .exp-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+        .exp-btn-go { padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 700; border: none; background: var(--success); color: white; margin-left: auto; }
+        .exp-btn-reset { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; border: none; background: rgba(192,57,43,0.1); color: var(--danger); border: 1px solid rgba(192,57,43,0.2); }
+        .exp-btn-go:hover { background: #219a52; }
+        .exp-btn-reset:hover { background: rgba(192,57,43,0.18); }
+
+        /* Empty state */
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .empty-state .es-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+        .empty-state p { font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-left">
+        <span class="topbar-icon">💡</span>
+        <div>
+            <h1>Plataforma de Monitoramento IoT</h1>
+            <div class="topbar-sub">Sistema de iluminação inteligente por zonas</div>
+        </div>
+    </div>
+    <div id="mqtt-status" class="mqtt-badge">Conectando...</div>
+</div>
+
+<div class="nav-tabs">
+    <button class="tab-btn active" onclick="alternarAba('aba-controle')">⚙️ Painel de Controle</button>
+    <button class="tab-btn" onclick="alternarAba('aba-estatisticas')">📊 Análise e Estatísticas</button>
+</div>
+
+<!-- Seletor de ambiente (sempre visível) -->
+<div style="max-width:1280px; margin: 0 auto; padding: 16px 24px 0;">
+    <div class="env-bar">
+        <label for="global-env-select">Ambiente:</label>
+        <select id="global-env-select" onchange="sincronizarSelecaoAmbiente(this.value)">
+            <option value="">Aguardando detecção de redes...</option>
+        </select>
+        <span id="zone-count-badge" style="font-size:12px; color: var(--text-muted); margin-left: auto;"></span>
+    </div>
+</div>
+
+<!-- ABA CONTROLE -->
+<div id="aba-controle" class="tab-content active">
+
+    <!-- Modo Global -->
+    <div class="global-mode-bar">
+        <h4>Modo de operação — todas as zonas deste ambiente</h4>
+        <div class="global-btn-group">
+            <button class="global-btn" id="gbtn-auto"   onclick="aplicarModoGlobal('AUTOMATICO')">⚡ Automático</button>
+            <button class="global-btn" id="gbtn-econ"   onclick="aplicarModoGlobal('ECONOMICO')">🌿 Econômico</button>
+            <button class="global-btn" id="gbtn-manual" onclick="aplicarModoGlobal('MANUAL')">🖐 Manual</button>
+        </div>
+        <div class="global-mode-info" id="global-mode-desc">
+            Selecione um modo acima para aplicá-lo a todas as zonas simultaneamente.
+        </div>
+    </div>
+
+    <!-- Cards das Zonas -->
+    <div class="zones-grid" id="zones-grid">
+        <div class="empty-state" id="empty-state">
+            <div class="es-icon">📡</div>
+            <p>Aguardando dados do broker MQTT…<br>As zonas aparecerão automaticamente ao serem detectadas.</p>
+        </div>
+    </div>
+
+</div>
+
+<!-- ABA ESTATÍSTICAS -->
+<div id="aba-estatisticas" class="tab-content">
+    <div class="export-panel">
+        <div>
+            <label>Dado:</label>
+            <select id="select-chart-export" style="min-width:180px;">
+                <option value="todos">Todos (Histórico CSV)</option>
+                <option value="geral">Gráfico Correlacionado</option>
+                <option value="ldr">Luminosidade (LDR)</option>
+                <option value="pir">Presença (PIR)</option>
+                <option value="lamp">Estado dos Relés</option>
+                <option value="modo">Histórico de Modos</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:6px;">
+            <label>Formato:</label>
+            <button class="exp-btn active" id="fmt-png" onclick="setFormatoExportacao('PNG')">PNG</button>
+            <button class="exp-btn" id="fmt-csv" onclick="setFormatoExportacao('CSV')">CSV</button>
+        </div>
+        <button class="exp-btn-go" onclick="processarExportacao()">⬇ Download</button>
+        <button class="exp-btn-reset" onclick="limparBancoLocal()">🗑 Resetar Histórico</button>
+    </div>
+
+    <div class="analytics-grid">
+        <div class="chart-box full-width">
+            <h3>Visão Geral Correlacionada (Sensores × Atuadores)</h3>
+            <div class="chart-container-wrapper"><canvas id="chart-geral"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Luminosidade por Zona (LDR)</h3>
+            <div class="chart-container-wrapper"><canvas id="chart-ind-ldr"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Presença por Zona (PIR)</h3>
+            <div class="chart-container-wrapper"><canvas id="chart-ind-pir"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Estado dos Relés por Zona</h3>
+            <div class="chart-container-wrapper"><canvas id="chart-ind-lamp"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Histórico de Modos (0=MAN · 1=AUTO · 2=ECON)</h3>
+            <div class="chart-container-wrapper"><canvas id="chart-ind-modo"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ─── CONFIG MQTT ────────────────────────────────────────────────
+const MQTT_HOST = "9c2c5a2ff2444b98b9f7fff2e9aa1180.s1.eu.hivemq.cloud";
+const MQTT_PORT = 8884;
+const MQTT_USER = "pir_user";
+const MQTT_PASS = "Agaci123";
+
+// ─── ESTADO GLOBAL ──────────────────────────────────────────────
+let ambienteAtivo = "";
+let ambientesDescobertos = new Set();
+let formatoSelecionado = "PNG";
+
+/*
+ * Estrutura do cacheZonas:
+ * {
+ *   sala2: {
+ *     zona1: { pir: {pir1: 0}, ldr: {ldr1: 100}, rele: 0, modo: "AUTOMATICO" },
+ *     zona2: { pir: {pir2: 0}, ldr: {ldr2: 100}, rele: 0, modo: "AUTOMATICO" }
+ *   }
+ * }
+ */
+let cacheZonas = {};
+
+let dbHistorico = JSON.parse(localStorage.getItem("db_iot_modular_v2")) || [];
+
+const ZONE_COLORS = ["#2980b9","#8e44ad","#16a085","#d35400","#c0392b","#1a5276"];
+
+// ─── MQTT ───────────────────────────────────────────────────────
+const clientId = "Web_Modular_" + Math.random().toString(16).substr(2, 8);
+const client = new Paho.MQTT.Client(MQTT_HOST, Number(MQTT_PORT), clientId);
+client.onConnectionLost = onConnectionLost;
+client.onMessageArrived = onMessageArrived;
+client.connect({
+    useSSL: true, userName: MQTT_USER, password: MQTT_PASS,
+    onSuccess: onConnect,
+    onFailure: () => {
+        const el = document.getElementById("mqtt-status");
+        el.innerText = "Falha na conexão";
+        el.style.color = "#e74c3c";
+    }
+});
+
+function onConnect() {
+    const el = document.getElementById("mqtt-status");
+    el.innerText = "Conectado ✓";
+    el.classList.add("online");
+
+    // Tópicos para a nova estrutura com zona
+    client.subscribe("/sensores/presenca/+/+/+");
+    client.subscribe("/sensores/luminosidade/+/+/+");
+    client.subscribe("/servicos/atuador/+/+/estado");
+    client.subscribe("/servicos/atuador/+/+/modo");
+
+    inicializarEstruturaGraficos();
+}
+
+function onConnectionLost(res) {
+    if (res.errorCode !== 0) {
+        const el = document.getElementById("mqtt-status");
+        el.innerText = "Desconectado";
+        el.classList.remove("online");
+        el.style.color = "#f1c40f";
+    }
+}
+
+// ─── ROTEAMENTO DE MENSAGENS ─────────────────────────────────────
+function onMessageArrived(message) {
+    const topico = message.destinationName;
+    const payload = message.payloadString;
+    const partes = topico.split('/').filter(Boolean);
+    // Esperado: ["sensores","presenca","sala2","zona1","pir1"]
+    //           ["servicos","atuador","sala2","zona1","estado"]
+
+    const tipo = partes[0]; // sensores | servicos
+
+    let sala, zona, campo;
+
+    if (tipo === "sensores") {
+        // /sensores/{tipoSensor}/{sala}/{zona}/{idSensor}
+        const tipoSensor = partes[1];
+        sala  = partes[2];
+        zona  = partes[3];
+        campo = tipoSensor === "presenca" ? "pir" : "ldr";
+        const idSensor = partes[4];
+        if (!sala || !zona || !idSensor) return;
+
+        garantirEstrutura(sala, zona);
+        cacheZonas[sala][zona][campo][idSensor] = parseInt(payload);
+        registrarAmbiente(sala);
+        salvarHistoricoEAtualizar(sala, zona);
+    }
+    else if (tipo === "servicos") {
+        // /servicos/atuador/{sala}/{zona}/{estado|modo}
+        sala  = partes[2];
+        zona  = partes[3];
+        campo = partes[4];
+        if (!sala || !zona || !campo) return;
+
+        garantirEstrutura(sala, zona);
+
+        if (campo === "estado") {
+            cacheZonas[sala][zona].rele = parseInt(payload);
+        } else if (campo === "modo") {
+            cacheZonas[sala][zona].modo = payload;
+        }
+
+        registrarAmbiente(sala);
+        salvarHistoricoEAtualizar(sala, zona);
+    }
+}
+
+function garantirEstrutura(sala, zona) {
+    if (!cacheZonas[sala]) cacheZonas[sala] = {};
+    if (!cacheZonas[sala][zona]) {
+        cacheZonas[sala][zona] = { pir: {}, ldr: {}, rele: 0, modo: "AUTOMATICO" };
+    }
+}
+
+function registrarAmbiente(sala) {
+    if (!ambientesDescobertos.has(sala)) {
+        ambientesDescobertos.add(sala);
+        adicionarOpcaoSelect(sala);
+    }
+}
+
+// ─── SELECT DE AMBIENTES ─────────────────────────────────────────
+function adicionarOpcaoSelect(sala) {
+    const select = document.getElementById("global-env-select");
+    if (ambientesDescobertos.size === 1) select.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = sala;
+    opt.innerText = sala.toUpperCase().replace(/_/g, " ");
+    select.appendChild(opt);
+    if (!ambienteAtivo) sincronizarSelecaoAmbiente(sala);
+}
+
+function sincronizarSelecaoAmbiente(sala) {
+    ambienteAtivo = sala;
+    document.getElementById("global-env-select").value = sala;
+    renderizarPainelControle();
+    if (meuChartGeral) atualizarTodosOsGraficos();
+}
+
+// ─── RENDER PRINCIPAL DO PAINEL ──────────────────────────────────
+function renderizarPainelControle() {
+    const grid = document.getElementById("zones-grid");
+    const emptyState = document.getElementById("empty-state");
+
+    if (!ambienteAtivo || !cacheZonas[ambienteAtivo]) return;
+
+    const zonas = Object.keys(cacheZonas[ambienteAtivo]).sort();
+
+    if (zonas.length === 0) {
+        grid.innerHTML = '';
+        grid.appendChild(emptyState);
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+
+    // Atualizar ou criar card para cada zona
+    zonas.forEach((zona, idx) => {
+        const cardId = `zone-card-${zona}`;
+        let card = document.getElementById(cardId);
+        if (!card) {
+            card = criarCardZona(zona, idx);
+            grid.appendChild(card);
+        }
+        atualizarCardZona(zona, idx);
+    });
+
+    // Remover cards de zonas que não existem mais
+    grid.querySelectorAll('.zone-card').forEach(card => {
+        const zona = card.dataset.zona;
+        if (!zonas.includes(zona)) card.remove();
+    });
+
+    // Atualizar badge de contagem
+    document.getElementById("zone-count-badge").innerText =
+        `${zonas.length} zona${zonas.length > 1 ? 's' : ''} detectada${zonas.length > 1 ? 's' : ''}`;
+
+    // Sincronizar indicador de modo global
+    atualizarIndicadorModoGlobal();
+}
+
+function criarCardZona(zona, idx) {
+    const cor = ZONE_COLORS[idx % ZONE_COLORS.length];
+    const card = document.createElement("div");
+    card.className = "zone-card";
+    card.id = `zone-card-${zona}`;
+    card.dataset.zona = zona;
+
+    card.innerHTML = `
+        <div class="zone-header">
+            <div class="zone-title">
+                <span class="zone-dot" style="background:${cor};"></span>
+                <span>${zona.toUpperCase().replace(/_/g,' ')}</span>
+            </div>
+            <div id="rele-badge-${zona}" class="rele-badge off">Apagada</div>
+        </div>
+        <div class="zone-body" id="zone-body-${zona}"></div>
+        <div class="zone-footer">
+            <div class="zone-mode-label">Modo desta zona</div>
+            <div class="zone-btn-group">
+                <button class="zone-btn" id="zbtn-auto-${zona}"   onclick="publicarModoZona('${zona}','AUTOMATICO')">⚡ Auto</button>
+                <button class="zone-btn" id="zbtn-econ-${zona}"   onclick="publicarModoZona('${zona}','ECONOMICO')">🌿 Econ.</button>
+                <button class="zone-btn" id="zbtn-manual-${zona}" onclick="publicarModoZona('${zona}','MANUAL')">🖐 Manual</button>
+            </div>
+            <div class="manual-panel" id="manual-panel-${zona}">
+                <div class="zone-btn-group" style="margin-top:8px;">
+                    <button class="zone-btn btn-on"  onclick="publicarComandoZona('${zona}','1')">Ligar</button>
+                    <button class="zone-btn btn-off" onclick="publicarComandoZona('${zona}','0')">Desligar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    return card;
+}
+
+function atualizarCardZona(zona, idx) {
+    const dados = cacheZonas[ambienteAtivo][zona];
+    if (!dados) return;
+
+    // Badge do relé
+    const releBadge = document.getElementById(`rele-badge-${zona}`);
+    if (releBadge) {
+        releBadge.innerText = dados.rele === 1 ? "💡 Ligada" : "Apagada";
+        releBadge.className = `rele-badge ${dados.rele === 1 ? 'on' : 'off'}`;
+    }
+
+    // Corpo dos sensores
+    const body = document.getElementById(`zone-body-${zona}`);
+    if (body) {
+        let html = "";
+
+        // PIRs
+        const pirs = Object.keys(dados.pir).sort();
+        pirs.forEach(id => {
+            const ativo = dados.pir[id] === 1;
+            html += `
+                <div class="sensor-row">
+                    <span class="sensor-icon">🏃</span>
+                    <span class="sensor-label">${id.toUpperCase()} · Presença</span>
+                    <span class="sensor-val ${ativo ? 'active' : 'inactive'}">${ativo ? 'DETECTADO' : 'Nenhum'}</span>
+                </div>`;
+        });
+
+        // LDRs
+        const ldrs = Object.keys(dados.ldr).sort();
+        ldrs.forEach(id => {
+            const val = dados.ldr[id];
+            const barColor = val < 20 ? '#e74c3c' : val < 50 ? '#f39c12' : '#27ae60';
+            html += `
+                <div class="sensor-row">
+                    <span class="sensor-icon">☀️</span>
+                    <span class="sensor-label">${id.toUpperCase()} · Luminosidade</span>
+                    <div class="sensor-bar-wrap">
+                        <span class="sensor-val" style="color:${barColor}">${val}%</span>
+                        <div class="sensor-bar"><div class="sensor-bar-fill" style="width:${val}%; background:${barColor};"></div></div>
+                    </div>
+                </div>`;
+        });
+
+        if (html === "") html = `<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:10px;">Aguardando dados dos sensores…</div>`;
+        body.innerHTML = html;
+    }
+
+    // Botões de modo
+    atualizarBotoesZona(zona, dados.modo);
+
+    // Painel manual
+    const manualPanel = document.getElementById(`manual-panel-${zona}`);
+    if (manualPanel) {
+        manualPanel.style.display = dados.modo === "MANUAL" ? "block" : "none";
+    }
+}
+
+function atualizarBotoesZona(zona, modo) {
+    const btnAuto   = document.getElementById(`zbtn-auto-${zona}`);
+    const btnEcon   = document.getElementById(`zbtn-econ-${zona}`);
+    const btnManual = document.getElementById(`zbtn-manual-${zona}`);
+    if (!btnAuto) return;
+
+    btnAuto.className   = "zone-btn" + (modo === "AUTOMATICO" ? " active-auto"   : "");
+    btnEcon.className   = "zone-btn" + (modo === "ECONOMICO"  ? " active-econ"   : "");
+    btnManual.className = "zone-btn" + (modo === "MANUAL"     ? " active-manual" : "");
+}
+
+// ─── MODO GLOBAL ─────────────────────────────────────────────────
+function aplicarModoGlobal(modo) {
+    if (!ambienteAtivo || !cacheZonas[ambienteAtivo]) return;
+    Object.keys(cacheZonas[ambienteAtivo]).forEach(zona => {
+        publicarModoZona(zona, modo);
+    });
+}
+
+function atualizarIndicadorModoGlobal() {
+    if (!ambienteAtivo || !cacheZonas[ambienteAtivo]) return;
+    const zonas = Object.keys(cacheZonas[ambienteAtivo]);
+    const modos = zonas.map(z => cacheZonas[ambienteAtivo][z].modo);
+    const todosIguais = modos.every(m => m === modos[0]);
+
+    const modoAtual = todosIguais ? modos[0] : "MISTO";
+    const desc = {
+        AUTOMATICO: "<b>Automático:</b> qualquer zona com presença e baixa luz acende <b>todos</b> os relés do ambiente.",
+        ECONOMICO:  "<b>Econômico:</b> cada relé responde <b>apenas aos sensores de sua própria zona</b> — presença e baixa luz locais.",
+        MANUAL:     "<b>Manual:</b> controle direto por zona. Os botões de ligar/desligar aparecem em cada card.",
+        MISTO:      "Zonas com modos diferentes. Use os controles individuais em cada card para ajustar."
+    };
+
+    document.getElementById("global-mode-desc").innerHTML = desc[modoAtual] || "";
+
+    document.getElementById("gbtn-auto").className   = "global-btn" + (modoAtual === "AUTOMATICO" ? " g-auto"   : "");
+    document.getElementById("gbtn-econ").className   = "global-btn" + (modoAtual === "ECONOMICO"  ? " g-econ"   : "");
+    document.getElementById("gbtn-manual").className = "global-btn" + (modoAtual === "MANUAL"     ? " g-manual" : "");
+}
+
+// ─── PUBLICAR MQTT ───────────────────────────────────────────────
+function publicarModoZona(zona, modo) {
+    if (!ambienteAtivo) return;
+    const msg = new Paho.MQTT.Message(modo);
+    msg.destinationName = `/servicos/atuador/${ambienteAtivo}/${zona}/modo`;
+    msg.retained = true;
+    msg.qos = 2;
+    client.send(msg);
+}
+
+function publicarComandoZona(zona, estado) {
+    if (!ambienteAtivo) return;
+    const msg = new Paho.MQTT.Message(estado);
+    msg.destinationName = `/servicos/atuador/${ambienteAtivo}/${zona}/comando`;
+    msg.qos = 2;
+    client.send(msg);
+}
+
+// ─── HISTÓRICO ───────────────────────────────────────────────────
+function salvarHistoricoEAtualizar(sala, zona) {
+    const dados = cacheZonas[sala] && cacheZonas[sala][zona];
+    if (!dados) return;
+
+    const agora = new Date();
+    const horaStr = agora.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+    const pirs = dados.pir;
+    const ldrs = dados.ldr;
+    const ldrVals = Object.values(ldrs);
+    const ldrMed  = ldrVals.length ? Math.round(ldrVals.reduce((a,b) => a+b, 0) / ldrVals.length) : 0;
+    const pirAny  = Object.values(pirs).some(v => v === 1) ? 1 : 0;
+    let modoNum = 1;
+    if (dados.modo === "MANUAL")     modoNum = 0;
+    if (dados.modo === "AUTOMATICO") modoNum = 1;
+    if (dados.modo === "ECONOMICO")  modoNum = 2;
+
+    dbHistorico.push({
+        sala, zona, hora: horaStr,
+        ldr: ldrMed, pir: pirAny,
+        lamp: dados.rele, modo: modoNum,
+        leiturasIndividuais: { ...pirs, ...ldrs }
+    });
+
+    if (dbHistorico.length > 500) dbHistorico.shift();
+    localStorage.setItem("db_iot_modular_v2", JSON.stringify(dbHistorico));
+
+    if (sala === ambienteAtivo) {
+        renderizarPainelControle();
+        if (meuChartGeral) atualizarTodosOsGraficos();
+    }
+}
+
+// ─── TABS ────────────────────────────────────────────────────────
+function alternarAba(abaId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(abaId).classList.add('active');
+    document.querySelector(`[onclick="alternarAba('${abaId}')"]`).classList.add('active');
+
+    if (abaId === 'aba-estatisticas') {
+        setTimeout(() => {
+            [meuChartGeral, meuChartLdr, meuChartPir, meuChartLamp, meuChartModo]
+                .filter(Boolean).forEach(c => { c.resize(); });
+            atualizarTodosOsGraficos();
+        }, 50);
+    }
+}
+
+// ─── GRÁFICOS ────────────────────────────────────────────────────
+let meuChartGeral, meuChartLdr, meuChartPir, meuChartLamp, meuChartModo;
+
+function gerarCor(idx) {
+    return ZONE_COLORS[idx % ZONE_COLORS.length];
+}
+
+function inicializarEstruturaGraficos() {
+    const baseOpts = { responsive: true, maintainAspectRatio: false };
+
+    meuChartGeral = new Chart(document.getElementById('chart-geral').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: 'LDR Médio (%)', data: [], borderColor: '#f1c40f', yAxisID: 'y' },
+            { label: 'Presença (OR)', data: [], borderColor: '#2ecc71', yAxisID: 'y_p', stepped: true },
+            { label: 'Relé (OR)',     data: [], borderColor: '#9b59b6', yAxisID: 'y_p', stepped: true, borderDash: [3,3] },
+            { label: 'Modo',          data: [], borderColor: '#3498db', yAxisID: 'y_p', stepped: true, borderDash: [8,4] }
+        ]},
+        options: { ...baseOpts, scales: {
+            y:   { min:0, max:100, title:{display:true, text:'LDR (%)'} },
+            y_p: { position:'right', min:0, max:2.2, ticks:{stepSize:1}, grid:{drawOnChartArea:false}, title:{display:true, text:'Estados'} }
+        }}
+    });
+
+    meuChartLdr = new Chart(document.getElementById('chart-ind-ldr').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [] },
+        options: { ...baseOpts, scales: { y: { min:0, max:100 } } }
+    });
+
+    meuChartPir = new Chart(document.getElementById('chart-ind-pir').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [] },
+        options: { ...baseOpts, scales: { y: { min:0, max:1.2, ticks:{stepSize:1} } } }
+    });
+
+    meuChartLamp = new Chart(document.getElementById('chart-ind-lamp').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [] },
+        options: { ...baseOpts, scales: { y: { min:0, max:1.2, ticks:{stepSize:1} } } }
+    });
+
+    meuChartModo = new Chart(document.getElementById('chart-ind-modo').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label:'Modo', data:[], borderColor:'#3498db', fill:true, backgroundColor:'rgba(52,152,219,0.08)', stepped:true }
+        ]},
+        options: { ...baseOpts, scales: { y: { min:0, max:2, ticks:{ stepSize:1,
+            callback: v => v===0?'MANUAL':v===1?'AUTO':v===2?'ECON':''
+        }}}}
+    });
+}
+
+function atualizarTodosOsGraficos() {
+    if (!ambienteAtivo) return;
+
+    const dadosSala = dbHistorico.filter(d => d.sala === ambienteAtivo);
+    const tempos    = dadosSala.map(d => d.hora);
+
+    // Gráfico geral consolidado
+    meuChartGeral.data.labels = tempos;
+    meuChartGeral.data.datasets[0].data = dadosSala.map(d => d.ldr);
+    meuChartGeral.data.datasets[1].data = dadosSala.map(d => d.pir);
+    meuChartGeral.data.datasets[2].data = dadosSala.map(d => d.lamp || 0);
+    meuChartGeral.data.datasets[3].data = dadosSala.map(d => d.modo || 0);
+    meuChartGeral.update();
+
+    // Modo geral (última zona como referência)
+    meuChartModo.data.labels = tempos;
+    meuChartModo.data.datasets[0].data = dadosSala.map(d => d.modo || 0);
+    meuChartModo.update();
+
+    // Zonas disponíveis
+    const zonas = cacheZonas[ambienteAtivo] ? Object.keys(cacheZonas[ambienteAtivo]).sort() : [];
+
+    // LDR por zona
+    meuChartLdr.data.labels = tempos;
+    atualizarDatasetsZona(meuChartLdr, dadosSala, zonas, (d, zona) => {
+        const dadosZona = dbHistorico.filter(h => h.sala === ambienteAtivo && h.zona === zona);
+        return dadosZona.map(h => h.ldr);
+    });
+    // Rebuilda datasets por zona com dados filtrados por zona
+    rebuildarDatasetsZona(meuChartLdr, dadosSala, zonas, 'ldr');
+    meuChartLdr.update();
+
+    rebuildarDatasetsZona(meuChartPir,  dadosSala, zonas, 'pir',  { stepped: true });
+    meuChartPir.update();
+
+    rebuildarDatasetsZona(meuChartLamp, dadosSala, zonas, 'lamp', { stepped: true });
+    meuChartLamp.update();
+}
+
+function rebuildarDatasetsZona(chart, dadosSala, zonas, campo, extraOpts = {}) {
+    chart.data.datasets = [];
+    zonas.forEach((zona, idx) => {
+        const cor = gerarCor(idx);
+        const dadosZona = dbHistorico.filter(d => d.sala === ambienteAtivo && d.zona === zona);
+        // Cria mapa hora → valor para alinhar com eixo X global
+        const mapaHora = {};
+        dadosZona.forEach(d => { mapaHora[d.hora] = d[campo] || 0; });
+
+        // Eixo X é o tempo de toda a sala
+        const valores = dadosSala.map(d => {
+            const porZona = dbHistorico.find(h => h.sala === ambienteAtivo && h.zona === zona && h.hora === d.hora);
+            return porZona !== undefined ? (porZona[campo] || 0) : null;
+        });
+
+        chart.data.datasets.push({
+            label: zona,
+            data: valores,
+            borderColor: cor,
+            backgroundColor: cor.replace(')', ', 0.07)').replace('rgb', 'rgba') || 'transparent',
+            spanGaps: true,
+            ...extraOpts
+        });
+    });
+    chart.data.labels = dadosSala.map(d => d.hora);
+}
+
+function atualizarDatasetsZona() {} // stub substituído por rebuildarDatasetsZona
+
+// ─── EXPORTAÇÃO ──────────────────────────────────────────────────
+function setFormatoExportacao(fmt) {
+    formatoSelecionado = fmt;
+    document.getElementById('fmt-png').className = 'exp-btn' + (fmt === 'PNG' ? ' active' : '');
+    document.getElementById('fmt-csv').className = 'exp-btn' + (fmt === 'CSV' ? ' active' : '');
+    const sel = document.getElementById('select-chart-export');
+    sel.disabled = (fmt === 'CSV');
+    if (fmt === 'CSV') sel.value = 'todos';
+}
+
+function processarExportacao() {
+    if (!ambienteAtivo) { alert("Nenhum ambiente ativo."); return; }
+    const alvo = document.getElementById('select-chart-export').value;
+
+    if (formatoSelecionado === "CSV") return exportarCSV();
+
+    const mapChart = { geral: meuChartGeral, ldr: meuChartLdr, pir: meuChartPir, lamp: meuChartLamp, modo: meuChartModo };
+    if (!mapChart[alvo]) { alert("Escolha um gráfico específico para exportar como imagem."); return; }
+    exportarPNG(mapChart[alvo], `IoT_${alvo.toUpperCase()}_${ambienteAtivo}`);
+}
+
+function exportarPNG(chartInstance, nome) {
+    const orig = chartInstance.canvas;
+    const tmp = document.createElement('canvas');
+    tmp.width = orig.width; tmp.height = orig.height;
+    const ctx = tmp.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, tmp.width, tmp.height);
+    ctx.drawImage(orig, 0, 0);
+    const a = document.createElement('a');
+    a.download = `${nome}.png`;
+    a.href = tmp.toDataURL('image/png');
+    a.click();
+}
+
+function exportarCSV() {
+    const dados = dbHistorico.filter(d => d.sala === ambienteAtivo);
+    if (!dados.length) { alert("Sem dados para esta sala."); return; }
+    let csv = "data:text/csv;charset=utf-8,SALA,ZONA,HORARIO,LDR_MEDIO,PIR_OR,RELE,MODO_ID,MODO_NOME\n";
+    dados.forEach(d => {
+        const nomes = ["MANUAL","AUTOMATICO","ECONOMICO"];
+        csv += `${d.sala},${d.zona},${d.hora},${d.ldr},${d.pir},${d.lamp||0},${d.modo||0},${nomes[d.modo||0]}\n`;
+    });
+    const a = document.createElement("a");
+    a.href = encodeURI(csv);
+    a.download = `Historico_${ambienteAtivo}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function limparBancoLocal() {
+    if (confirm("Resetar histórico local?")) {
+        localStorage.removeItem("db_iot_modular_v2");
+        dbHistorico = [];
+        atualizarTodosOsGraficos();
+    }
+}
+</script>
+</body>
+</html>
