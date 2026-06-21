@@ -65,7 +65,7 @@ void processarEstrategiaAtuacao() {
   } 
   else if (z1_modo_operacao == "ECONOMICO") {
     // Modo Isolado: Só reage aos critérios do sensor local
-    if (z1_movimento == 1 && z1_luminosidade <= 30) {
+    if (z1_movimento == 1 && z1_luminosidade <= 15) {
       novo_estado_rele = 1;
     }
   } 
